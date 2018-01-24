@@ -277,102 +277,6 @@ void fitTab(mat3* tab, vec2* tabAmplitude, const int N, const Brdf& brdf)
         }
 }
 
-void fitTab_parallel(mat3* tab, vec2* tabAmplitude, const int N, const Brdf& brdf)
-{
-    auto fitFunc = [&](int a)
-    {
-        LTC ltc;
-
-        // loop over theta and alpha
-        for (int t = 0; t <= N - 1; ++t)
-        {
-            float theta = std::min<float>(1.57f, t / float(N - 1) * 1.57079f);
-            const vec3 V = vec3(sinf(theta), 0, cosf(theta));
-
-            // alpha = roughness^2
-            float roughness = a / float(N - 1);
-            float alpha = std::max<float>(roughness * roughness, MIN_ALPHA);
-
-            //cout << "a = " << a << "\t t = " << t << endl;
-            //cout << "alpha = " << alpha << "\t theta = " << theta << endl;
-            //cout << endl;
-
-            ltc.amplitude = computeNorm(brdf, V, alpha);
-            const vec3 averageDir = computeAverageDir(brdf, V, alpha);
-            bool isotropic;
-
-            // 1. first guess for the fit
-            // init the hemisphere in which the distribution is fitted
-            // if theta == 0 the lobe is rotationally symmetric and aligned with Z = (0 0 1)
-            if (t == 0)
-            {
-                ltc.X = vec3(1, 0, 0);
-                ltc.Y = vec3(0, 1, 0);
-                ltc.Z = vec3(0, 0, 1);
-
-                if (a == N - 1) // roughness = 1
-                {
-                    ltc.m11 = 1.0f;
-                    ltc.m22 = 1.0f;
-                }
-                else // init with roughness of previous fit
-                {
-                    ltc.m11 = std::max<float>(tab[a + 1 + t * N][0][0], MIN_ALPHA);
-                    ltc.m22 = std::max<float>(tab[a + 1 + t * N][1][1], MIN_ALPHA);
-                }
-
-                ltc.m13 = 0;
-                ltc.m23 = 0;
-                ltc.update();
-
-                isotropic = true;
-            }
-                // otherwise use previous configuration as first guess
-            else
-            {
-                vec3 L = normalize(averageDir);
-                vec3 T1(L.z, 0, -L.x);
-                vec3 T2(0, 1, 0);
-                ltc.X = T1;
-                ltc.Y = T2;
-                ltc.Z = L;
-
-                ltc.update();
-
-                isotropic = false;
-            }
-
-            // 2. fit (explore parameter space and refine first guess)
-            float epsilon = 0.05f;
-            fit(ltc, brdf, V, alpha, epsilon, isotropic);
-
-            // copy data
-            tab[a + t * N] = ltc.M;
-            tabAmplitude[a + t * N][0] = ltc.amplitude;
-            tabAmplitude[a + t * N][1] = 0;
-
-            // kill useless coefs in matrix and normalize
-            tab[a + t * N][0][1] = 0;
-            tab[a + t * N][1][0] = 0;
-            tab[a + t * N][2][1] = 0;
-            tab[a + t * N][1][2] = 0;
-            tab[a + t * N] = 1.0f / tab[a + t * N][2][2] * tab[a + t * N];
-        }
-    };
-
-    vector<future<void>> fitJobs;
-    for (int a = N - 1; a >= 0; --a)
-    {
-        std::future<void> job = std::async(std::launch::async, fitFunc, a);
-        fitJobs.push_back(std::move(job));
-    }
-
-    for (int32_t t = 0; t < fitJobs.size(); ++t)
-    {
-        fitJobs[t].wait();
-    }
-}
-
 int main(int argc, char* argv[])
 {
     // BRDF to fit
@@ -385,11 +289,7 @@ int main(int argc, char* argv[])
     vec2* tabAmplitude = new vec2[N * N];
 
     // fit
-#if 0
     fitTab(tab, tabAmplitude, N, brdf);
-#else
-    fitTab_parallel(tab, tabAmplitude, N, brdf);
-#endif
 
     // export in C, matlab and DDS
     writeTabMatlab(tab, tabAmplitude, N);
