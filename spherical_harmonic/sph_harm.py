@@ -40,7 +40,6 @@ def K(l, m):
 
 
 def sph_harm(m, l, theta, phi):
-    theta, phi = phi, theta
     #  return a point sample of a Spherical Harmonic basis function
     #  l is the band, range [0..N]
     #  m in the range [-l..l]
