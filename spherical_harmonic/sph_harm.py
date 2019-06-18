@@ -52,3 +52,7 @@ def sph_harm(m, l, theta, phi):
         return sqrt2 * K(l, m) * np.cos(m * phi) * P(l, m, np.cos(theta))
     else:
         return sqrt2 * K(l, -m) * np.sin(-m * phi) * P(l, -m, np.cos(theta))
+    
+    
+def sh_idx(m, l):
+    return l * (l + 1) + m
