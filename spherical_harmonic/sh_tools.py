@@ -11,7 +11,7 @@ def print_sh_coeffs(band, coeffs):
         linestr = ""
         for m in np.arange(-l, l+1):
             i = sh_idx(m, l)
-            linestr += str(coeffs[i]) + " "
+            linestr += "{:10.6f}".format(coeffs[i]) + " "
         print(linestr)
 
         
