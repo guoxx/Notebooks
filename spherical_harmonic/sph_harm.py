@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.misc import factorial
+from scipy.special import factorial
 
 
 def P(l, m, x):
