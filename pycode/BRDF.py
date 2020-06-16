@@ -77,3 +77,16 @@ def maskingFuncProjectedAreaTest(NDF, maskingFunc, alpha, Wo, num_samples=128):
         return NDF(alpha, cosThetaI) * maskingFunc(alpha, cosThetaO) * cosTheta
 
     return sph.spherical_integral(integrand, hemisphere=True, num_samples=num_samples) - cosThetaO
+
+
+def whiteFurnaceTest(NDF, maskingFunc, alpha, Wo, num_samples=128):
+    cosThetaO = sph.vec3_cosTheta(Wo)
+
+    def integrand(Wi):
+        Wh = sph.vec3_normalize(np.array([Wi[0] + Wo[0], Wi[1] + Wo[1], Wi[2] + Wo[2]]))
+        cosThetaH = sph.vec3_cosTheta(Wh)
+        isHemisphere = np.heaviside(cosThetaH, 0)
+        denom = 4 * np.abs(sph.vec3_cosTheta(Wo))
+        return NDF(alpha, cosThetaH) * maskingFunc(alpha, cosThetaO) / denom * isHemisphere
+
+    return sph.spherical_integral(integrand, hemisphere=False, num_samples=num_samples) - 1
