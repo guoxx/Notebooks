@@ -85,5 +85,5 @@ def spherical_integral(integrand, num_samples=128, hemisphere=False):
     vec = spherical_dir(theta, phi)
 
     v = integrand(vec)
-    integral = np.sum(integrand(vec) * vec3_sinTheta(vec)) * theta_max * phi_max / num_samples / num_samples
+    integral = np.sum(v * vec3_sinTheta(vec)) * theta_max * phi_max / num_samples / num_samples
     return integral
