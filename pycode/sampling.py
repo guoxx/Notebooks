@@ -9,7 +9,8 @@ class NormalDistributionGGX(object):
         super(NormalDistributionGGX, self).__init__()
 
 
-    def eval(self, alpha, NoH):
+    def eval(self, alpha, Wh):
+        NoH = np.clip(sph.vec3_cosTheta(Wh), 0, 1)
         return BRDF.NDF_GGX(alpha, NoH)
 
 
@@ -26,4 +27,4 @@ class NormalDistributionGGX(object):
 
     def pdf(self, alpha, Wh):
         clampedCos = np.clip(sph.vec3_cosTheta(Wh), 0, 1)
-        return self.eval(alpha, clampedCos) * clampedCos
+        return self.eval(alpha, Wh) * clampedCos
