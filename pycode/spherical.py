@@ -38,12 +38,14 @@ def vec3_normalize(vec):
     return np.array([vec[0] / l, vec[1] / l, vec[2] / l])
 
 
-def vec3_transform(vec, m):
-    x, y, z = vec[0], vec[1], vec[2]
-    x_ = x * m[0][0] + y * m[0][1] + z * m[0][2]
-    y_ = x * m[1][0] + y * m[1][1] + z * m[1][2]
-    z_ = x * m[2][0] + y * m[2][1] + z * m[2][2]
-    return np.array(x_, y_, z_)
+def vec3_transform(m, vec):
+    return np.einsum("ij,j...->i...", m, vec)
+
+    # x, y, z = vec[0], vec[1], vec[2]
+    # x_ = x * m[0][0] + y * m[0][1] + z * m[0][2]
+    # y_ = x * m[1][0] + y * m[1][1] + z * m[1][2]
+    # z_ = x * m[2][0] + y * m[2][1] + z * m[2][2]
+    # return np.array([x_, y_, z_])
 
 
 def meshgrid_spherical_coord(num_samples):
