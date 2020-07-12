@@ -12,4 +12,3 @@ def square_to_cos_hemisphere(sample):
 
 def square_to_cos_hemisphere_pdf(p):
     return np.clip(sph.vec3_cosTheta(p), 0, 1) / np.pi
-

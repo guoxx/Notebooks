@@ -1,10 +1,14 @@
+if __name__ == "__main__":
+    import mitsuba
+    mitsuba.set_variant('packet_rgb')
+
 import numpy as np
+import enoki as ek
+
+from mitsuba.core import Float, Matrix4f, Transform4f, warp
+from mitsuba_ext import Frame
+
 import spherical as sph
-import warp as warp
-import BRDF as BRDF
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-from matplotlib import cm, colors
 
 
 class LTC(object):
@@ -22,53 +26,76 @@ class LTC(object):
 
 
     def update_matrix(self):
-        self.M = np.array([[self.m00,      0.0, self.m02],
-                           [     0.0, self.m11,      0.0],
-                           [self.m20,      0.0, self.m22]])
-        self.invM = np.linalg.inv(self.M)
+        self.M = Matrix4f(self.m00,      0.0, self.m02, 0,
+                               0.0, self.m11,      0.0, 0,
+                          self.m20,      0.0, self.m22, 0,
+                                 0,        0,        0, 1)
+        transfo = Transform4f(self.M)
+        self.invM = transfo.inverse().matrix
 
 
     def eval(self, Wi):
-        Wi_o_unorm = sph.vec3_transform(self.invM, Wi)
+        inv_transfo = Transform4f(self.invM)
+        Wi_o_unorm = inv_transfo.transform_vector(Wi)
 
-        len = sph.vec3_length(Wi_o_unorm)
-        Wi_o = sph.vec3_normalize(Wi_o_unorm)
+        len = ek.norm(Wi_o_unorm)
+        Wi_o = ek.normalize(Wi_o_unorm)
 
         # clamped cosine as original function
-        D_o = np.clip(sph.vec3_cosTheta(Wi_o), 0, 1) / np.pi
+        D_o = ek.clamp(Frame.cos_theta(Wi_o), 0, 1) / np.pi
 
-        det = np.linalg.det(self.invM)
+        det = ek.det(self.invM)
         jacobian = det / len**3
 
         return D_o * jacobian
 
 
     def sample(self, sample_):
-        Wi_o = warp.square_to_cos_hemisphere(sample_)
-        Wi = sph.vec3_transform(self.M, Wi_o)
-        Wi = sph.vec3_normalize(Wi)
+        Wi_o = warp.square_to_cosine_hemisphere(sample_)
 
-        is_valid = np.heaviside(sph.vec3_cosTheta(Wi), 0)
-        return Wi, is_valid
+        transfo = Transform4f(self.M)
+        Wi = transfo.transform_vector(Wi_o)
+        Wi = ek.normalize(Wi)
+
+        return Wi, ek.select(Frame.cos_theta(Wi) > 0, Float(1.0), Float(0.0))
 
 
     def pdf(self, Wi):
-        Wi_o_unorm = sph.vec3_transform(self.invM, Wi)
+        inv_transfo = Transform4f(self.invM)
+        Wi_o_unorm = inv_transfo.transform_vector(Wi)
 
-        len = sph.vec3_length(Wi_o_unorm)
-        Wi_o = sph.vec3_normalize(Wi_o_unorm)
+        len = ek.norm(Wi_o_unorm)
+        Wi_o = ek.normalize(Wi_o_unorm)
 
-        pdf_o = warp.square_to_cos_hemisphere_pdf(Wi_o)
+        pdf_o = warp.square_to_cosine_hemisphere_pdf(Wi_o)
 
-        det = np.linalg.det(self.invM)
+        det = ek.det(self.invM)
         jacobian = det / len**3
 
         return pdf_o * jacobian
 
 
 if __name__ == "__main__":
-    ltc = LTC(m00=0.2, m20=0.5)
-    integral = sph.spherical_integral(lambda v: ltc.pdf(v), num_samples=512)
-    print(integral)
+    ltc = LTC(0.2, 0.2, 1)
+
+
+    from mitsuba.python.chi2 import ChiSquareTest, SphericalDomain
+
+    # some sampling code
+    def my_sample(sample):
+        return ltc.sample(sample)
+
+    # the corresponding probability density function
+    def my_pdf(p):
+        return ltc.pdf(p)
+
+    chi2 = ChiSquareTest(
+        domain=SphericalDomain(),
+        sample_func=my_sample,
+        pdf_func=my_pdf,
+        sample_dim=2
+    )
+
+    assert chi2.run()
 
 
