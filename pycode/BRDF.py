@@ -1,6 +1,6 @@
 if __name__ == "__main__":
     import mitsuba
-    mitsuba.set_variant('gpu_rgb')
+    mitsuba.set_variant('packet_rgb')
 
 from mitsuba.core import Float
 from mitsuba_ext import Frame
@@ -61,7 +61,7 @@ def Gvis_GGX(alpha, NdotV, NdotL):
     a2 = alpha*alpha
     G_V = NdotV + ek.sqrt( (NdotV - NdotV * a2) * NdotV + a2 )
     G_L = NdotL + ek.sqrt( (NdotL - NdotL * a2) * NdotL + a2 )
-    return 1 / ( G_V * G_L )
+    return ek.rcp( G_V * G_L )
 
 
 def microfacetBRDF(alpha, specularColor, NdotV, NdotL, NdotH, LdotH):
@@ -127,7 +127,7 @@ if __name__ == "__main__":
         for j in range(len(theta)):
             Wo = sph.spherical_dir(theta[j], 0)
             err_proj_area[i][j] = maskingFuncProjectedAreaTest(NDF_GGX_, smithMaskingFunction, alpha[i], Wo, num_samples=1024)[0]
-            err_furnace_test[i][j] = whiteFurnaceTest(NDF_GGX_, smithMaskingFunction, alpha[i], Wo, num_samples=4096)[0]
+            err_furnace_test[i][j] = whiteFurnaceTest(NDF_GGX_, smithMaskingFunction, alpha[i], Wo, num_samples=1024)
 
     alpha = alpha.numpy()
     theta = theta.numpy()
