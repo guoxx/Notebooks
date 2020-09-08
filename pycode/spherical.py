@@ -16,8 +16,8 @@ def spherical_dir(theta, phi):
     return Vector3f(x, y, z)
 
 
-def meshgrid_spherical(num_theta_samples, num_phi_samples):
-    theta = ek.linspace(Float, 0, np.pi, num_theta_samples)
+def meshgrid_spherical(num_theta_samples, num_phi_samples, hemisphere=False):
+    theta = ek.linspace(Float, 0, np.pi/2 if hemisphere else np.pi, num_theta_samples)
     phi = ek.linspace(Float, 0, 2 * np.pi, num_phi_samples)
     theta, phi = ek.meshgrid(theta, phi)
     return theta, phi
