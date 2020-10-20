@@ -2,6 +2,8 @@ if __name__ == "__main__":
     import mitsuba
     mitsuba.set_variant('packet_rgb')
 
+import jax
+import jax.numpy as jnp
 import numpy as np
 import enoki as ek
 
@@ -13,6 +15,8 @@ import matplotlib.pyplot as plt
 import plot as pltx
 
 import spherical as sph
+
+import jax
 
 
 class LTC(object):
@@ -149,15 +153,12 @@ class FitLTC(object):
         worldToLocal = ek.transpose(Matrix3f(X, Y, averageDir))
         localToWorld = ek.inverse(worldToLocal)
 
-        transfo = Matrix3f(m00,   0, 0,
+        transfo = Matrix3f(m00,   0, m20,
                              0, m11, 0,
-                           m20,   0, 1)
+                             0,   0, 1)
         M = localToWorld @ transfo
 
         self.ltc = LTC(m00=M[0, 0], m02=M[0, 2], m11=M[1, 1], m20=M[2, 0], m22=M[2, 2], amplitude=amplitude)
-
-
-    # def solve(self, brdf_func):
 
 
 def plot_ltc(brdf_, ltc_):
@@ -199,13 +200,8 @@ if __name__ == "__main__":
 
     ltc_params = np.zeros((8, 16, 5))
     for i, roughness in enumerate(np.linspace(0.2, 1, 8)):
-        initial_guess = [1, 1, 1]
-
         for j, theta in enumerate(np.linspace(0, np.pi/2*0.98, 16)):
             print("roughness {}, theta {} ".format(roughness, theta))
-
-            is_isotropic = (theta == 0)
-            initial_guess[2] = 0
 
             brdf = BRDFAdapter(roughness, theta)
 
@@ -262,15 +258,15 @@ if __name__ == "__main__":
 
             from scipy import optimize
 
-            if is_isotropic:
-                first_guess = [1]
-                result = optimize.minimize(lambda params: compute_error(params, is_isotropic), first_guess, method="Nelder-Mead")
-                fit = FitLTC(m00=result.x[0], m11=result.x[0], m20=0, amplitude=amplitude, averageDir=averageDir)
-                initial_guess = np.array([result.x[0], result.x[0], 0])
-            else:
-                result = optimize.minimize(lambda params: compute_error(params, is_isotropic), initial_guess, method="Nelder-Mead")
-                fit = FitLTC(m00=result.x[0], m11=result.x[1], m20=result.x[2], amplitude=amplitude, averageDir=averageDir)
-                initial_guess = np.array([result.x[0], result.x[1], result.x[2]])
+            first_guess = [1]
+            result = optimize.minimize(lambda params: compute_error(params, True), first_guess,
+                                       method="Nelder-Mead")
+
+            initial_guess = np.array([result.x[0], result.x[0], 0])
+            result = optimize.minimize(lambda params: compute_error(params, False), initial_guess,
+                                       method="Nelder-Mead")
+            fit = FitLTC(m00=result.x[0], m11=result.x[1], m20=result.x[2], amplitude=amplitude, averageDir=averageDir)
+
             ltc = fit.ltc
 
             # initial_guess = result.x
