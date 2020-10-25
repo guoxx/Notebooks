@@ -33,13 +33,11 @@ class LTC(object):
 
         self.update_matrix()
 
-
     def update_matrix(self):
         self.M = Matrix3f(self.m00,      0.0, self.m02,
                                0.0, self.m11,      0.0,
                           self.m20,      0.0, self.m22)
         self.invM = ek.inverse(self.M)
-
 
     def eval(self, Wi):
         inv_matrices = self.invM
@@ -57,7 +55,6 @@ class LTC(object):
 
         return D_o * jacobian
 
-
     def sample(self, sample_):
         Wi_o = warp.square_to_cosine_hemisphere(sample_)
 
@@ -67,7 +64,6 @@ class LTC(object):
         Wi = ek.normalize(Wi)
 
         return Wi, self.pdf(Wi)
-
 
     def pdf(self, Wi):
         inv_matrices = self.invM
@@ -84,6 +80,13 @@ class LTC(object):
 
         return pdf_o * jacobian
 
+    def normalization_test(self):
+        v = sph.spherical_integral(self.pdf, num_samples=1024)
+        # print("ltc pdf integration ", sph.spherical_integral(ltc.pdf, hemisphere=True, num_samples=1024))
+        diff = np.abs(v - 1.0)
+        epsilon = 0.01
+        if diff > epsilon:
+            raise Exception("LTC normalization failed, difference: " + diff)
 
 
 class BRDFAdapter(object):
@@ -197,11 +200,21 @@ def plot_ltc(brdf_, ltc_):
 
 
 if __name__ == "__main__":
+    import pycode.BRDF as BRDF
 
-    ltc_params = np.zeros((8, 16, 5))
-    for i, roughness in enumerate(np.linspace(0.2, 1, 8)):
-        for j, theta in enumerate(np.linspace(0, np.pi/2*0.98, 16)):
+    lut_size = 8
+    lut_data = np.zeros((lut_size, lut_size, 5))
+
+    for i, roughness in enumerate(np.linspace(BRDF.MIN_LINEAR_ROUGHNESS, 1, lut_size)):
+        if i == 0:
+            initial_guess = np.array([1])
+        else:
+            initial_guess = np.array([lut_data[i-1][0][0]])
+
+        for j, theta in enumerate(np.linspace(0, np.pi * 0.49, lut_size)):
             print("roughness {}, theta {} ".format(roughness, theta))
+
+            is_isotropic = (j == 0)
 
             brdf = BRDFAdapter(roughness, theta)
 
@@ -224,9 +237,9 @@ if __name__ == "__main__":
 
                 def error(Wi):
                     df = ltc.eval(Wi) * ltc.amplitude - brdf.eval(Wi)
-                    return ek.abs(df) ** 3
+                    return ek.abs(df) ** 2
 
-                # return sph.spherical_integral(error, num_samples=512, hemisphere=False)
+                return sph.spherical_integral(error, num_samples=512, hemisphere=False)
 
                 total_error = 0.0
                 # num_samples = 4096 * 16
@@ -247,10 +260,6 @@ if __name__ == "__main__":
                     sample_weight = ek.select(Frame.cos_theta(Wi) > 0, ek.rcp(pdf_brdf + pdf_ltc), 1000)
                     total_error += ek.hsum(error(Wi) * sample_weight) / num_samples
 
-                err0 = np.heaviside(-ltc.m00, 0)
-                err1 = np.heaviside(-ltc.m11, 0)
-                err2 = np.heaviside(-ltc.m22, 0)
-                total_error += (err0 + err1 + err2) * 1000000
                 # regularization = ek.abs(ltc.m00-1) + ek.abs(ltc.m02) + ek.abs(ltc.m11-1) + ek.abs(ltc.m20) + ek.abs(ltc.m22 - 1)
                 # regularization = regularization[0]
                 # regularization = 0
@@ -258,25 +267,17 @@ if __name__ == "__main__":
 
             from scipy import optimize
 
-            first_guess = [1]
-            result = optimize.minimize(lambda params: compute_error(params, True), first_guess,
-                                       method="Nelder-Mead")
+            result = optimize.minimize(lambda params: compute_error(params, is_isotropic), initial_guess, method="Nelder-Mead")
+            if is_isotropic:
+                initial_guess = np.array([result.x[0], result.x[0], 0])
+            else:
+                initial_guess = np.array([result.x[0], result.x[1], result.x[2]])
 
-            initial_guess = np.array([result.x[0], result.x[0], 0])
-            result = optimize.minimize(lambda params: compute_error(params, False), initial_guess,
-                                       method="Nelder-Mead")
-            fit = FitLTC(m00=result.x[0], m11=result.x[1], m20=result.x[2], amplitude=amplitude, averageDir=averageDir)
-
+            fit = FitLTC(m00=initial_guess[0], m11=initial_guess[1], m20=initial_guess[2], amplitude=amplitude, averageDir=averageDir)
             ltc = fit.ltc
 
-            # initial_guess = result.x
-
-            print("result : ", result.x)
-            print("ltc normalization ", sph.spherical_integral(ltc.eval, hemisphere=True, num_samples=1024))
-            print("ltc pdf integration ", sph.spherical_integral(ltc.pdf, hemisphere=True, num_samples=1024))
-
-            print(np.array([ltc.m00, ltc.m02, ltc.m11, ltc.m20, ltc.m22]).flatten())
-            ltc_params[i][j] = np.array([ltc.m00, ltc.m02, ltc.m11, ltc.m20, ltc.m22]).flatten()
+            # print(np.array([ltc.m00, ltc.m02, ltc.m11, ltc.m20, ltc.m22]).flatten())
+            lut_data[i][j] = np.array([ltc.m00, ltc.m02, ltc.m11, ltc.m20, ltc.m22]).flatten()
 
             plot_ltc(brdf, ltc)
 
