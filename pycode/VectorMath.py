@@ -1,16 +1,14 @@
 import numpy as np
 
-# TODO
 
-class Vector3(np.ndarray):
-    def __init__(self, a, b, c):
-        # if np.isscalar(a):
-        #     a = np.array(a)
-        # if np.isscalar(b):
-        #     b = np.array(b)
-        # if np.isscalar(c):
-        #     c = np.array(c)
-        return np.concatenate(a, b, c)
+class Vector(np.ndarray):
+    def __new__(cls, *args, **kwargs):
+        obj = super().__new__(cls, *args, **kwargs)
+        return obj
+
+    def __array_finalize__(self, obj):
+        if obj is None:
+            return
 
     @property
     def x(self):
@@ -110,5 +108,9 @@ class Vector3(np.ndarray):
 
 
 if __name__ == "__main__":
-    v = Vector3(0.0, 1.0, 2.0)
-    print(v)
+    foo = np.array((1.0, 2.0, 3.0)).view(Vector)
+    print(foo)
+    print(foo.x)
+    print(foo.y)
+
+

@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import spherical as sph
-from NumpyHLSL import Frame, normalize, dot, float3
+from NumpyHLSL import Frame, normalize, dot
 
 
 MIN_LINEAR_ROUGHNESS = 0.089
@@ -27,18 +27,11 @@ def NDF_GGX(alpha, NoH):
     return np.minimum(a2 / (np.pi * d * d), FP16_Max)
 
 
-def NDF_GGX_(alpha, NoH):
-    oneMinusSquaredNoH = 1.0 - NoH**2
-    a = NoH * alpha
-    k = alpha / (a * a + oneMinusSquaredNoH)
-    return (k * k * (1.0 / np.pi))
-
-
-def NDF_GGX_Anisotropic(at, ab, NdotH, TdotH, BdotH):
+def NDF_GGX_Anisotropic(at, ab, NoH, ToH, BoH):
     a2 = at * ab
     # d = float3(a2 * NdotH, ab * TdotH, at * BdotH)
     # d2 = dot(d, d)
-    d2 = (a2 * NdotH)**2 + (ab * TdotH)**2 + (at * BdotH)**2
+    d2 = (a2 * NoH) ** 2 + (ab * ToH) ** 2 + (at * BoH) ** 2
     b2 = a2 / d2
     return a2 * b2 * b2 * (1.0 / np.pi)
 
@@ -63,22 +56,15 @@ def G_GGX(alpha, NdotV, NdotL):
 
 def G_GGX_Anisotropic(NdotV, TdotV, BdotV, NdotL, TdotL, BdotL, at, ab):
     return smithAnisotropicMaskingFunction(NdotV, TdotV, BdotV, at, ab) * \
-           smithAnisotropicMaskingFunction(NdotL, TdotL,BdotL, at, ab)
+           smithAnisotropicMaskingFunction(NdotL, TdotL, BdotL, at, ab)
 
 
- # Same as G_GGX but have 1/(4*NdotV*NdotL) included
+# Same as G_GGX but have 1/(4*NdotV*NdotL) included
 def Gvis_GGX(alpha, NoV, NoL):
     a2 = alpha*alpha
-    G_V = NoV + np.sqrt( (NoV - NoV * a2) * NoV + a2 )
-    G_L = NoL + np.sqrt( (NoL - NoL * a2) * NoL + a2 )
-    return 1.0 / ( G_V * G_L )
-
-
-def microfacetBRDF(alpha, specularColor, NoV, NoL, NoH, LoH):
-    D = NDF_GGX(alpha, NoH)
-    Gvis = Gvis_GGX(alpha, NoV, NoL)
-    F = fresnelSchlick(specularColor, 1, LoH)
-    return F * D * Gvis
+    G_V = NoV + np.sqrt((NoV - NoV * a2) * NoV + a2)
+    G_L = NoL + np.sqrt((NoL - NoL * a2) * NoL + a2)
+    return 1.0 / (G_V * G_L)
 
 
 def NDF_NormalizationTest(NDF, alpha, num_samples=128):
@@ -123,16 +109,13 @@ def whiteFurnaceTest(NDF, maskingFunc, alpha, wo, num_samples=128):
 if __name__ == "__main__":
     alpha = np.linspace(MIN_GGX_ALPHA, 1, 10)
     err_ndf = np.zeros(len(alpha))
-    err_ndf_ = np.zeros(len(alpha))
     for i, a in enumerate(alpha):
         err_ndf[i] = NDF_NormalizationTest(NDF_GGX, a, num_samples=1024)
-        err_ndf_[i] = NDF_NormalizationTest(NDF_GGX_, a, num_samples=1024)
 
     fig = plt.figure(figsize=plt.figaspect(3))
 
     ax1 = fig.add_subplot(3, 1, 1)
     ax1.plot(alpha, np.abs(err_ndf), label="NDF_GGX")
-    ax1.plot(alpha, np.abs(err_ndf_), label="NDF_GGX_")
     ax1.set_ylim(0, 1)
     ax1.legend()
 
@@ -143,8 +126,8 @@ if __name__ == "__main__":
     for i in range(len(alpha)):
         for j in range(len(theta)):
             wo = sph.spherical_dir(theta[j], 0)
-            err_proj_area[i][j] = maskingFuncProjectedAreaTest(NDF_GGX_, smithMaskingFunction, alpha[i], wo, num_samples=512)[0]
-            err_furnace_test[i][j] = whiteFurnaceTest(NDF_GGX_, smithMaskingFunction, alpha[i], wo, num_samples=1024)
+            err_proj_area[i][j] = maskingFuncProjectedAreaTest(NDF_GGX, smithMaskingFunction, alpha[i], wo, num_samples=512)[0]
+            err_furnace_test[i][j] = whiteFurnaceTest(NDF_GGX, smithMaskingFunction, alpha[i], wo, num_samples=1024)
 
     alpha, theta = np.meshgrid(alpha, theta)
 

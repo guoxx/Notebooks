@@ -1,69 +1,77 @@
 import numpy as np
 import BRDF as BRDF
 import spherical as sph
-from NumpyHLSL import normalize, rsqrt, utReflect, float3, Frame, dot
-
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-from matplotlib import cm
-from matplotlib.ticker import LinearLocator, FormatStrFormatter
+from NumpyHLSL import normalize, rsqrt, utReflect, float3, Frame, dot, max
+from VectorMath import Vector
 
 
 class BSDFSamplingRecord:
     def __init__(self, wo, *, wi=None):
-        self.wo = wo
+        self.wo = wo.view(Vector)
         if wi is not None:
-            self.wi = wi
+            self.wi = wi.view(Vector)
 
         self.eta = 1
 
 
 class MicrofacetDistribution:
     def __init__(self, alpha_x, alpha_y):
-        self.alpha_x = alpha_x
-        self.alpha_y = alpha_y
+        if np.isscalar(alpha_x):
+            self.alpha_x = alpha_x
+            self.alpha_y = alpha_y
+        else:
+            self.alpha_x = np.expand_dims(alpha_x, axis=-1)
+            self.alpha_y = np.expand_dims(alpha_y, axis=-1)
 
     def effectivelySmooth(self):
-        return np.maximum(self.alpha_x, self.alpha_y) < 1e-3
+        return max(self.alpha_x, self.alpha_y) < 1e-3
 
     def D(self, wh):
-        return BRDF.NDF_GGX_Anisotropic(self.alpha_x, self.alpha_y, wh[..., 2:3], wh[..., 0:1], wh[..., 1:2])
+        wh_v = wh.view(Vector)
+        return BRDF.NDF_GGX_Anisotropic(self.alpha_x, self.alpha_y, wh_v.z, wh_v.x, wh_v.y)
 
     def G1(self, w):
-        return BRDF.smithAnisotropicMaskingFunction(w[..., 2:3], w[..., 0:1], w[..., 1:2], self.alpha_x, self.alpha_y)
+        w_v = w.view(Vector)
+        return BRDF.smithAnisotropicMaskingFunction(w_v.z, w_v.x, w_v.y, self.alpha_x, self.alpha_y)
 
     def G(self, wo, wi):
-        return BRDF.G_GGX_Anisotropic(wo[..., 2:3], wo[..., 0:1], wo[..., 1:2], wi[..., 2:3], wi[..., 0:1], wi[..., 1:2], self.alpha_x, self.alpha_y)
+        wo_v = wo.view(Vector)
+        wi_v = wi.view(Vector)
+        return BRDF.G_GGX_Anisotropic(wo_v.z, wo_v.x, wo_v.y,
+                                      wi_v.z, wi_v.x, wi_v.y,
+                                      self.alpha_x, self.alpha_y)
 
     # Refer to http://jcgt.org/published/0007/04/01/
     def sample_wh(self, wo, u):
-        U1 = u[..., 0:1]
-        U2 = u[..., 1:2]
-        Ve = wo
+        U1 = u[..., 0]
+        U2 = u[..., 1]
+        Ve = wo.view(Vector)
 
-        foo = self.alpha_x * Ve[..., 0]
+        if not np.isscalar(self.alpha_x):
+            assert self.alpha_x.shape[0:-1] == Ve.shape[0:-1]
+            assert self.alpha_y.shape[0:-1] == Ve.shape[0:-1]
 
         # Section 3.2: transforming the view direction to the hemisphere configuration
-        Vh = normalize(float3(self.alpha_x * Ve[..., 0], self.alpha_y * Ve[..., 1], Ve[..., 2]))
+        Vh = normalize(float3(self.alpha_x * Ve.x, self.alpha_y * Ve.y, Ve.z, keepdims=False)).view(Vector)
         # Section 4.1: orthonormal basis (with special case if cross product is zero)
-        lensq = Vh[..., 0] * Vh[..., 0] + Vh[..., 1] * Vh[..., 1]
-        T1 = float3(-Vh[..., 1], Vh[..., 0], np.zeros_like(Vh[..., 0])) * rsqrt(lensq) if lensq > 0 else float3(1, 0, 0)
+        lensq = Vh.x * Vh.x + Vh.y * Vh.y
+        T1 = np.where(lensq > 0, float3(-Vh.y, Vh.x, np.zeros_like(Vh.x), keepdims=False) * rsqrt(lensq), float3(1, 0, 0))
         T2 = np.cross(Vh, T1)
         # Section 4.2: parameterization of the projected area
         r = np.sqrt(U1)
         phi = 2.0 * np.pi * U2
         t1 = r * np.cos(phi)
         t2 = r * np.sin(phi)
-        s = 0.5 * (1.0 + Vh[..., 2:3])
+        s = 0.5 * (1.0 + Vh.z)
         t2 = (1.0 - s) * np.sqrt(1.0 - t1 * t1) + s * t2
         # Section 4.3: reprojection onto hemisphere
-        Nh = t1 * T1 + t2 * T2 + np.sqrt(np.maximum(0.0, 1.0 - t1 * t1 - t2 * t2)) * Vh
+        Nh = (t1 * T1 + t2 * T2 + np.sqrt(np.maximum(0.0, 1.0 - t1 * t1 - t2 * t2)) * Vh).view(Vector)
         # Section 3.4: transforming the normal back to the ellipsoid configuration
-        Ne = normalize(float3(self.alpha_x * Nh[..., 0], self.alpha_y * Nh[..., 1], np.maximum(0.0, Nh[..., 2])))
+        Ne = normalize(float3(self.alpha_x * Nh.x, self.alpha_y * Nh.y, np.maximum(0.0, Nh.z), keepdims=False))
         return Ne
 
     def pdf(self, wo, wh):
-        return self.D(wh) * self.G1(wo) * np.abs(np.linalg.dot(wo, wh)) / np.abs(Frame.cosTheta(wo))
+        return self.D(wh) * self.G1(wo) * abs(dot(wo, wh)) / abs(Frame.cosTheta(wo))
 
 
 class MicrofacetReflection:
@@ -72,17 +80,16 @@ class MicrofacetReflection:
 
     def sample(self, bRec, sample_):
         wh = self.distr.sample_wh(bRec.wo, sample_)
-        wh *= np.sign(bRec.wo[..., 2:3])
+        wh *= np.sign(bRec.wo.z)
 
         wi = utReflect(bRec.wo, wh)
 
         is_valid = Frame.cosTheta(bRec.wo) * Frame.cosTheta(wi) > 0
 
-        bRec.wi = np.where(is_valid, wi, np.array([0,0,0]))
+        bRec.wi = np.where(is_valid, wi, float3(0,0,0))
 
-        cosThetaO = Frame.cosTheta(bRec.wo)
         cosThetaI = Frame.cosTheta(bRec.wi)
-        pdf_ = self.distr.G(cosThetaO, cosThetaI) / np.abs(self.distr.G1(cosThetaO) * cosThetaI)
+        pdf_ = self.distr.G(bRec.wo, bRec.wi) / np.abs(self.distr.G1(bRec.wo) * cosThetaI)
         return np.where(is_valid, pdf_, 0)
 
     def eval(self, bRec):
@@ -99,7 +106,15 @@ class MicrofacetReflection:
         return np.where(is_valid, self.distr.pdf(bRec.wo, wh) * dwh_dwi, 0)
 
 
+
 if __name__ == "__main__":
+
+    import chi2 as chi2
+    import matplotlib.pyplot as plt
+    from mpl_toolkits.mplot3d import Axes3D
+    from matplotlib import cm
+    from matplotlib.ticker import LinearLocator, FormatStrFormatter
+
     refl = MicrofacetReflection(0.8, 0.8)
     wo = sph.spherical_dir(70.0 / 180 * np.pi, 0)
 
@@ -120,9 +135,9 @@ if __name__ == "__main__":
     # Plot the surface.
     surf = ax.plot_surface(wi[..., 0] * v, wi[..., 1] * v, wi[..., 2] * v, cmap=cm.coolwarm, linewidth=0, antialiased=False)
 
-    ax.set_xlim(-1.0, 1.0)
-    ax.set_ylim(-1.0, 1.0)
-    ax.set_zlim(-1.0, 1.0)
+    # ax.set_xlim(-1.0, 1.0)
+    # ax.set_ylim(-1.0, 1.0)
+    # ax.set_zlim(-1.0, 1.0)
     # ax.set_lim(-1.0, 1.0)
     # ax.set_lim(-1.0, 1.0)
     # # Customize the z axis.
